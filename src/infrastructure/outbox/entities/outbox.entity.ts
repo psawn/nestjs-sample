@@ -17,30 +17,34 @@ export enum OutboxStatus {
 @Index(['aggregateId'])
 @Index(['eventType'])
 export class OutboxEntity {
-  @PrimaryColumn('uuid')
+  @PrimaryColumn({ type: 'uuid' })
   id!: string;
 
-  @Column('varchar', { length: 255 })
+  @Column('varchar', { name: 'event_type', length: 255 })
   eventType!: string;
 
-  @Column('uuid')
+  @Column('uuid', { name: 'aggregate_id' })
   aggregateId!: string;
 
   @Column('jsonb')
   payload!: Record<string, any>;
 
-  @Column('varchar', { length: 50, default: OutboxStatus.PENDING })
+  @Column('varchar', { 
+    name: 'status', 
+    length: 50, 
+    default: OutboxStatus.PENDING 
+  })
   status!: OutboxStatus;
 
-  @CreateDateColumn()
-  createdAt!: Date;
-
-  @Column('timestamp', { nullable: true })
-  processedAt?: Date;
-
-  @Column('int', { default: 0 })
+  @Column('int', { name: 'retry_count', default: 0 })
   retryCount!: number;
 
-  @Column('text', { nullable: true })
+  @CreateDateColumn({ name: 'created_at' })
+  createdAt!: Date;
+
+  @Column('timestamp', { name: 'processed_at', nullable: true })
+  processedAt?: Date;
+
+  @Column('text', { name: 'error_message', nullable: true })
   errorMessage?: string;
 }

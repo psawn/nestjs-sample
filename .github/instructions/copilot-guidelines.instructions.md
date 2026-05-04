@@ -4,131 +4,130 @@ description: "Guidelines for modular monolith evolving to microservices using Ka
 applyTo: '**'
 ---
 
-# Architecture & Design
-- **Pattern**: Modular Monolith (Microservice-ready).
-- **Bounded Contexts**: `Auth`, `User`, `Search`.
-- **Isolation Rule**: 
-  - Each module must use its own PostgreSQL Database/Schema.
-  - **STRICT**: No cross-module SQL joins or direct Entity relationships (@JoinColumn).
-  - Use **UUID v7** for all primary keys, foreign keys, and event IDs.
+# 1. ARCHITECTURE & DESIGN
 
-# Data Ownership & Storage
-- **Database**: PostgreSQL (Mandatory for Auth and User services).
-- **Auth Service Responsibility**: 
-  - Stores **ONLY** security credentials: `email`, `password_hash`, `refresh_tokens`, `social_provider_ids`.
-  - Implement interface `IAuthCredentialRepository`
-- **User Service Responsibility**: 
-  - Stores personal information: `full_name`, `avatar_url`, etc.
-  - Links via `user_id` (UUID v7) received through Kafka.
-  - Implement interface `IUserProfileRepository`
+## Pattern & Structure
+- **Model**: Modular Monolith (Microservice-ready).
+- **Bounded Contexts**:
+  - `Auth`: Security credentials only.
+  - `User`: Personal profiles & metadata.
+  - `Search`
 
-# Communication Strategy
+## Service Responsibilities
+| Service | Owns | Interface |
+|---------|------|-----------|
+| Auth | `email`, `password_hash` | `IAuthCredentialRepository` |
+| User | `full_name`, `avatar_url`, `email` | `IUserProfileRepository` |
+
+## Database Design
+
+### Storage: PostgreSQL
+- **Isolation**: Each module = separate database/schema. 
+- **Integrity**: STRICTLY NO cross-module SQL joins or FK relationships.
+- **IDs**: Use **UUID v7** for all entities and event IDs (for sortability).
+
+### Naming Convention
+- **Tables & Columns**: Must use **snake_case** (e.g., `user_id`, `created_at`).
+- **Code Property**: Must use **camelCase** (e.g., `userId`, `createdAt`).
+- **Mapping**: Always use the `@Column({ name: 'snake_case_name' })` decorator in Entity files.
+
+---
+
+# 2. DATA & REPOSITORY PATTERN
+
+## Requirements (Mandatory)
+- NO direct TypeORM `Repository<T>` injection in Services.
+- Define **Domain Repository Interface** per module.
+- Bind implementations using **DI Tokens** (Symbols or strings, e.g., `AUTH_REPO_TOKEN`).
+- Services call interface methods: `.save()`, `.findOneBy()`, etc.
+
+---
+
+# 3. COMMUNICATION
+
 ## Synchronous (Internal)
-- Use **Interface-based abstraction (DI tokens)** for inter-module calls.
+- Use Interface-based DI for inter-module calls.
 
 ## Asynchronous (Event-Driven)
-- **Primary Transport**: Kafka.
-- **Flow**: 
-  1. `AuthService`: Creates account -> Saves via `IAuthCredentialRepository`.
-  2. `AuthService`: Emits `UserCreated` event (Required: `user_id`, `email`; Optional: profile metadata).
-  3. `UserService`: Consumes event -> Saves via `IUserProfileRepository`.
+- **Transport**: Kafka.
+- **Flow**:
+  1. `AuthService` creates account → saves via `IAuthCredentialRepository`.
+  2. `AuthService` publishes `UserCreated` event via Outbox (Required: `user_id`, `email`; Optional: profile metadata).
+  3. `UserService` consumes event → saves via `IUserProfileRepository`.
+- **Event Contracts**: Centralized in `src/common/constants/events.ts` using enums.
 
-# Implementation Standards
-- **Repository Pattern (Mandatory)**:
-  - Services MUST NOT inject TypeORM `Repository<T>` directly.
-  - Every module must define a **Domain Repository Interface** (e.g., `IAuthCredentialRepository`).
-  - Implementation classes must be bound to these interfaces using **DI Tokens**.
-  - Logic in Service should only call methods like `.save()`, `.findOneBy()`, etc., from the interface.
-- **Idempotency**: All event consumers MUST check for existing records via Repository before processing.
-- **Thin Controllers**: Business logic belongs to Services.
-- **Validation**: Strict DTO validation using `class-validator`.
-- **Event Contracts**: Use centralized `enum` in `src/common/constants/events.ts`.
+---
 
-# Infrastructure
-- **Dependency Injection**: 
-  - Shared infrastructure (Kafka, Postgres) in `src/infrastructure`.
-  - Modules must inject `KafkaService` and repositories via DI Tokens.
+# 4. RELIABILITY
 
-# Clean Code
-- **Type Safety**: **NO `any`**.
-- **DI Tokens**: Always use Symbols or constant strings for injection tokens (e.g., `AUTH_REPO_TOKEN`).
-
-# Environment Configuration
-- MUST provide a `.env.example` file at project root.
-- This file defines all required environment variables for local development and deployment.
-- DO NOT commit real secrets.
-
-# Reliability & Messaging Guarantees
-
-## Outbox Pattern (MANDATORY)
-- All events MUST be published using the **Outbox Pattern**.
-- Services MUST NOT emit events directly to Kafka after database operations.
-
-## Required Flow
-1. Perform business logic and persist data.
-2. Persist event into an `outbox` table within the SAME database transaction.
-3. Commit transaction.
-4. A background worker/process reads from `outbox` and publishes to Kafka.
-5. Mark event as `PROCESSED` (or delete) after successful publish.
-
-## Outbox Table Requirements
-- Fields:
-  - `id` (UUID v7)
-  - `event_type`
-  - `aggregate_id`
-  - `payload` (JSON)
-  - `status` (`PENDING`, `PROCESSED`, `FAILED`)
-  - `created_at`
-  - `processed_at` (nullable)
-- MUST support retry (based on `status = PENDING` or `FAILED`).
-
-## Guarantees
-- Prevent event loss when Kafka is unavailable.
-- Ensure **atomicity** between DB write and event creation.
-- Enable retry and recovery.
-
-## Idempotency (Consumer Side)
+## IDEMPOTENCY
 - Consumers MUST be idempotent.
 - MUST check existing records before insert/update.
 - SHOULD use unique constraints (e.g., `aggregate_id`) or upsert.
 
-## Anti-Pattern (STRICTLY FORBIDDEN)
-- ❌ Emitting Kafka events directly inside service logic after DB save:
+## OUTBOX PATTERN
+
+### Requirements
+- All events MUST be published using the Outbox Pattern.
+- Services MUST NOT emit events directly to Kafka after database operations.
+
+### Prohibited Anti-Pattern
 ```ts
+// ❌ FORBIDDEN
 await repository.save(...)
-await kafkaService.emit(...) // NOT ALLOWED
+await kafkaService.emit(...)  // Direct Kafka emit not allowed
 ```
 
-# Outbox Publisher Implementation (MANDATORY FOR PRODUCTION)
+### Outbox Table Schema
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | UUID v7 | `id` | PK |
+| `event_type` | String | `eventType` | Index |
+| `aggregate_id` | UUID v7 | `aggregateId` | Index |
+| `payload` | JSONB | `payload` | |
+| `status` | ENUM | `status` | Index (PENDING, etc.) |
+| `retry_count` | Integer | `retryCount` | Default: 0 |
+| `created_at` | Timestamp| `createdAt` | Index |
+| `processed_at`| Timestamp| `processedAt` | Nullable |
+| `error_message`| Text | `errorMessage` | Nullable |
 
-## Processing Strategy
-- Process outbox events in batches (e.g., LIMIT 100).
-- Do not load all events into memory.
-- Process events using controlled concurrency (parallel with limit).
-- Do not process events sequentially.
 
-## Concurrency Control
-- Use Promise.all with concurrency limit (e.g., p-limit).
-- Avoid unbounded parallel execution.
+### Publisher Implementation
+- **Batch processing**: 
+  - 1. Fetch PENDING in chunks (e.g., LIMIT 100)
+  - 2. For each event:
+      - Publish to Kafka.
+      - If success: Mark as PROCESSED.
+      - If failure: Increment retry_count, mark as FAILED if max retries reached.
+  - 3. Repeat until no PENDING events remain.
+- **Concurrency**: Use `p-limit` with Promise.all for controlled parallelism.
+- **Retry**: Increment `retry_count`; mark FAILED after max attempts.
+- **Loop**: Repeat until no PENDING events remain.
+- **Performance**:
+  - Prefer I/O concurrency over threading
+  - DO NOT use Worker Threads for Outbox
 
-## Retry Strategy
-- Track retry_count
-- Stop retry after max attempts
-- Mark event as FAILED
+---
 
-## Processing Flow
+# 5. CODE QUALITY
 
-1. Fetch batch of PENDING events (e.g., LIMIT 100).
-2. For each event:
-    - Publish to Kafka.
-    - If success: Mark as PROCESSED.
-    - If failure: Increment retry_count, mark as FAILED if max retries reached.
-3. Repeat until no PENDING events remain.
+## Standards
+- **Type Safety**: NO `any` types.
+- **Validation**: Strict DTO validation via `class-validator`.
+- **Logic Placement**: Business logic in Services; Controllers thin.
+- **Functions**: 
+  - Functions should be concise and focused on a single task.
+  - Avoid large, monolithic functions; break them into smaller, reusable pieces.
 
-## Performance Rules
-- Prefer I/O concurrency over threading
-- DO NOT use Worker Threads for Outbox
-- Optimize with:
-    - batching
-    - concurrency limit
-    - efficient queries
+---
+
+# 6. INFRASTRUCTURE & SETUP
+
+## DI & Modules
+- Shared services (Kafka, PostgreSQL, Outbox) in `src/infrastructure`.
+- Inject via DI Tokens, NOT direct type references.
+
+## Environment
+- Provide `.env.example` at project root.
+- Define all required variables for local development and deployment.
+- **NEVER commit real secrets**.

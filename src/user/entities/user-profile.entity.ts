@@ -2,12 +2,15 @@ import { Column, Entity, PrimaryColumn } from 'typeorm';
 
 @Entity('user_profiles')
 export class UserProfile {
-  @PrimaryColumn({ type: 'uuid' })
+  @PrimaryColumn({ type: 'uuid', name: 'user_id' })
   userId!: string;
 
-  @Column()
+  @Column({ name: 'full_name' })
   fullName!: string;
 
-  @Column({ nullable: true })
+  @Column({ name: 'email' })
+  email!: string;
+
+  @Column({ name: 'avatar_url', nullable: true })
   avatarUrl?: string;
 }
