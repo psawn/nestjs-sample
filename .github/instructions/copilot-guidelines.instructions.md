@@ -22,7 +22,7 @@ applyTo: '**'
 ## Database Design
 
 ### Storage: PostgreSQL
-- **Isolation**: Each module = separate database/schema. 
+- **Isolation**: Each module = separate database/schema.
 - **Integrity**: STRICTLY NO cross-module SQL joins or FK relationships.
 - **IDs**: Use **UUID v7** for all entities and event IDs (for sortability).
 
@@ -58,7 +58,110 @@ applyTo: '**'
 
 ---
 
-# 4. RELIABILITY
+# 4. API GATEWAY
+
+## Responsibilities
+- All external HTTP requests MUST go through the API Gateway.
+- API Gateway handles:
+  - Request entry point
+  - Authorization layer
+  - Rate limiting
+  - Request validation boundary
+  - Routing to internal services
+
+## Communication
+- Gateway communicates with internal services using NestJS Microservice Transport (ClientProxy)
+- Gateway MUST NOT access databases directly
+- Gateway MUST NOT contain business logic
+- Gateway MUST delegate logic to domain services via message patterns
+
+## Route Rules
+
+| Route Type | Authentication |
+|------------|----------------|
+| `/auth/*` | Public (use `@Public()` decorator) |
+| `/users/*` | JWT Required (use `@UseGuards(JwtAuthGuard)`) |
+
+
+## Timeout & Resilience
+- Recommended timeout: 5000ms
+- Gateway SHOULD handle:
+  - TimeoutException
+  - ServiceUnavailableException
+  - RPC transport errors
+
+# 5. AUTHENTICATION
+
+## JWT Implementation (MANDATORY)
+
+### DO NOT USE @nestjs/passport
+All authentication MUST be implemented manually without `@nestjs/passport`.
+
+### Required Components
+1. **`@Public()` decorator** (`src/common/guards/public.decorator.ts`):
+   - Use `SetMetadata(IS_PUBLIC_KEY, true)` to mark routes as public
+   - JwtAuthGuard MUST check this metadata and skip authentication when present
+
+2. **`JwtAuthGuard`** (`src/common/guards/jwt-auth.guard.ts`):
+   - Implement `CanActivate` interface
+   - Inject `JwtService` and `Reflector`
+   - Check `@Public()` metadata via Reflector; if present, return `true` immediately
+   - Extract Bearer token from `Authorization` header
+   - Use `jwtService.verify(token)` to validate JWT
+   - On success: set `request.user = { userId: payload.sub, email: payload.email }`
+   - On failure: throw `UnauthorizedException`
+   - MUST NOT use `PassportStrategy` or `AuthGuard('jwt')`
+
+3. **`JwtService` Configuration**:
+   - Algorithm: HS256
+   - Secret: from `JWT_ACCESS_SECRET` env variable (required)
+   - Expiration: from `JWT_ACCESS_EXPIRES` env variable (default: `1h`)
+   - Payload MUST contain: `sub` (user_id), `email`
+
+### JWT Payload Structure
+```json
+{
+  "sub": "uuid-v7-user-id",
+  "email": "user@example.com",
+  "iat": 1610000000,
+  "exp": 1610003600
+}
+```
+
+### Password Security
+- Passwords MUST be hashed using **bcrypt**
+- Salt rounds: **10-12**
+- Plain text passwords MUST NEVER be stored or logged
+
+### Route Protection Pattern
+```ts
+// Public route - no auth required
+@Public()
+@Post('auth/login')
+async login(@Body() dto: LoginDto) { ... }
+
+// Protected route - JWT required
+@UseGuards(JwtAuthGuard)
+@Get('users/:id')
+async getUser(@Param('id') id: string) { ... }
+```
+
+### Gateway Authentication
+- Gateway MUST validate JWT via `JwtAuthGuard` BEFORE forwarding protected requests
+- Internal services SHOULD trust validated gateway requests (gateway sets `request.user`)
+
+## Public Routes
+- Public endpoints MUST use a custom `@Public()` decorator
+- `JwtAuthGuard` MUST skip authentication for routes marked with `@Public()`
+- Do NOT use any other mechanism (e.g., `Reflector`) to mark public routes
+
+## Role-Based Access Control (if implemented)
+- Use `@Roles('admin')` decorator with `RolesGuard`
+- `RolesGuard` must check `user.roles` from validated JWT payload
+
+---
+
+# 6. RELIABILITY
 
 ## IDEMPOTENCY
 - Consumers MUST be idempotent.
@@ -81,53 +184,72 @@ await kafkaService.emit(...)  // Direct Kafka emit not allowed
 ### Outbox Table Schema
 | Field | Type | Notes |
 |-------|------|-------|
-| `id` | UUID v7 | `id` | PK |
-| `event_type` | String | `eventType` | Index |
-| `aggregate_id` | UUID v7 | `aggregateId` | Index |
-| `payload` | JSONB | `payload` | |
-| `status` | ENUM | `status` | Index (PENDING, etc.) |
-| `retry_count` | Integer | `retryCount` | Default: 0 |
-| `created_at` | Timestamp| `createdAt` | Index |
-| `processed_at`| Timestamp| `processedAt` | Nullable |
-| `error_message`| Text | `errorMessage` | Nullable |
+| `id` | UUID v7 | Primary key |
+| `event_type` | String | Index |
+| `aggregate_id` | UUID v7 | Index |
+| `payload` | JSONB | |
+| `status` | ENUM | Index (PENDING, PROCESSED, FAILED) |
+| `retry_count` | Integer | Default: 0 |
+| `created_at` | Timestamp | Index |
+| `processed_at`| Timestamp| Nullable |
+| `error_message`| Text | Nullable |
 
 
 ### Publisher Implementation
-- **Batch processing**: 
-  - 1. Fetch PENDING in chunks (e.g., LIMIT 100)
-  - 2. For each event:
-      - Publish to Kafka.
-      - If success: Mark as PROCESSED.
-      - If failure: Increment retry_count, mark as FAILED if max retries reached.
-  - 3. Repeat until no PENDING events remain.
-- **Concurrency**: Use `p-limit` with Promise.all for controlled parallelism.
-- **Retry**: Increment `retry_count`; mark FAILED after max attempts.
-- **Loop**: Repeat until no PENDING events remain.
+- **Batch processing**:
+  1. Fetch PENDING in chunks (LIMIT 100)
+  2. For each event:
+      - Publish to Kafka
+      - If success: Mark as PROCESSED
+      - If failure: Increment retry_count, mark as FAILED if max retries reached
+  3. Repeat until no PENDING events remain
+- **Concurrency**: Use `p-limit` with `Promise.all` for controlled parallelism
+- **Retry**: Increment `retry_count`; mark FAILED after max attempts
+- **Loop**: Repeat until no PENDING events remain
 - **Performance**:
   - Prefer I/O concurrency over threading
   - DO NOT use Worker Threads for Outbox
 
 ---
 
-# 5. CODE QUALITY
+# 7. CODE QUALITY
 
 ## Standards
-- **Type Safety**: NO `any` types.
-- **Validation**: Strict DTO validation via `class-validator`.
-- **Logic Placement**: Business logic in Services; Controllers thin.
-- **Functions**: 
-  - Functions should be concise and focused on a single task.
-  - Avoid large, monolithic functions; break them into smaller, reusable pieces.
+- **Type Safety**: NO `any` types
+- **Validation**: Strict DTO validation via `class-validator`
+- **Logic Placement**: Business logic in Services; Controllers thin
+- **Functions**: Concise, single-responsibility; avoid large monolithic functions
 
 ---
 
-# 6. INFRASTRUCTURE & SETUP
+# 8. INFRASTRUCTURE & SETUP
 
 ## DI & Modules
-- Shared services (Kafka, PostgreSQL, Outbox) in `src/infrastructure`.
-- Inject via DI Tokens, NOT direct type references.
+- Shared services (Kafka, PostgreSQL, Outbox) in `src/infrastructure`
+- Inject via DI Tokens, NOT direct type references
 
 ## Environment
-- Provide `.env.example` at project root.
-- Define all required variables for local development and deployment.
-- **NEVER commit real secrets**.
+- Provide `.env.example` at project root
+- Define all required variables for local development and deployment
+- **NEVER commit real secrets**
+
+### Required Environment Variables
+```
+# Application
+PORT=3000
+
+# PostgreSQL
+POSTGRES_HOST=localhost
+POSTGRES_PORT=5432
+POSTGRES_USER=postgres
+POSTGRES_PASSWORD=postgres
+POSTGRES_DB=auth_db
+
+# JWT (required - no defaults)
+JWT_ACCESS_SECRET=<your-secret-at-least-32-chars>
+JWT_ACCESS_EXPIRES=1h
+
+# Kafka
+KAFKA_BROKER=localhost:9092
+KAFKA_CLIENT_ID=nestjs-sample-kafka-client
+```
