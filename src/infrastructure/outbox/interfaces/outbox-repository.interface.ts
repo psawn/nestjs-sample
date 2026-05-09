@@ -2,7 +2,13 @@ import { OutboxEntity, OutboxStatus } from '../entities/outbox.entity';
 
 export interface IOutboxRepository {
   save(entity: Partial<OutboxEntity>): Promise<OutboxEntity>;
-  findByStatus(status: OutboxStatus): Promise<OutboxEntity[]>;
+  findByStatus(
+    status: OutboxStatus,
+    options?: {
+      order?: Record<string, 'ASC' | 'DESC'>;
+      take?: number;
+    },
+  ): Promise<OutboxEntity[]>;
   findById(id: string): Promise<OutboxEntity | null>;
   updateStatus(
     id: string,

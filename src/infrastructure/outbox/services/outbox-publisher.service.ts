@@ -21,6 +21,7 @@ export class OutboxPublisherService {
 
   @Interval(5000)
   async publishPendingEvents(): Promise<void> {
+    this.logger.debug('Checking for pending outbox events');
     const limit = pLimit(this.CONCURRENCY_LIMIT);
 
     try {
@@ -28,6 +29,7 @@ export class OutboxPublisherService {
       while (hasMore) {
         const pendingEvents = await this.outboxRepository.findByStatus(
           OutboxStatus.PENDING,
+          { take: this.BATCH_SIZE },
         );
 
         if (pendingEvents.length === 0) {

@@ -7,18 +7,32 @@ import {
   AUTH_SERVICE_CLIENT,
   USER_SERVICE_CLIENT,
 } from '../common/constants/di-tokens';
+import { AuthModule } from '../auth/auth.module';
 
 @Module({
   imports: [
+    AuthModule,
     ClientsModule.registerAsync([
       {
         name: AUTH_SERVICE_CLIENT,
         inject: [ConfigService],
         useFactory: (configService: ConfigService) => ({
-          transport: Transport.TCP,
+          transport: Transport.KAFKA,
           options: {
-            host: '127.0.0.1',
-            port: configService.get<number>('MICROSERVICE_PORT') ?? 4000,
+            client: {
+              brokers: (
+                configService.get<string>('KAFKA_BROKERS') ?? 'localhost:9092'
+              ).split(','),
+              clientId: 'auth-gateway-client',
+              retry: {
+                initialRetryTime: 300,
+                retries: 10,
+              },
+            },
+            consumer: {
+              groupId: 'auth-gateway-consumer',
+              allowAutoTopicCreation: true,
+            },
           },
         }),
       },
@@ -26,10 +40,22 @@ import {
         name: USER_SERVICE_CLIENT,
         inject: [ConfigService],
         useFactory: (configService: ConfigService) => ({
-          transport: Transport.TCP,
+          transport: Transport.KAFKA,
           options: {
-            host: '127.0.0.1',
-            port: configService.get<number>('MICROSERVICE_PORT') ?? 4000,
+            client: {
+              brokers: (
+                configService.get<string>('KAFKA_BROKERS') ?? 'localhost:9092'
+              ).split(','),
+              clientId: 'user-gateway-client',
+              retry: {
+                initialRetryTime: 300,
+                retries: 10,
+              },
+            },
+            consumer: {
+              groupId: 'user-gateway-consumer',
+              allowAutoTopicCreation: true,
+            },
           },
         }),
       },

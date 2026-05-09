@@ -33,5 +33,6 @@ import { StringValue } from 'ms';
       useClass: AuthCredentialRepository,
     },
   ],
+  exports: [JwtModule],
 })
 export class AuthModule {}

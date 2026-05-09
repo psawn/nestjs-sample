@@ -20,6 +20,13 @@ import { ConfigService } from '@nestjs/config';
               clientId:
                 configService.get<string>('KAFKA_CLIENT_ID') ??
                 'nestjs-sample-kafka-client',
+              retry: {
+                initialRetryTime: 300,
+                retries: 10,
+              },
+            },
+            producer: {
+              allowAutoTopicCreation: true,
             },
           },
         }),

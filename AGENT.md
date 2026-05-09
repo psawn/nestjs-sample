@@ -97,3 +97,5 @@ The system is designed to:
 - Auto-linting: Every code generation command must be followed by an automated linting/formatting pass (e.g., npm run lint --fix or go fmt).
 
 - Validation: Generated code must adhere to the project's architectural boundaries defined in this document.
+
+- Doc: Doc: MUST use Context7 to ensure all generated code follows the latest official documentation and up-to-date APIs.

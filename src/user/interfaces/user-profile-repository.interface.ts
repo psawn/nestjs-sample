@@ -5,10 +5,6 @@ export interface IUserProfileRepository {
   findOneBy(
     where: FindOptionsWhere<UserProfile> | FindOptionsWhere<UserProfile>[],
   ): Promise<UserProfile | null>;
-  create(dto: {
-    userId: string;
-    fullName: string;
-    avatarUrl?: string;
-  }): UserProfile;
+  create(dto: Partial<UserProfile>): UserProfile;
   save(userProfile: UserProfile): Promise<UserProfile>;
 }

@@ -15,11 +15,18 @@ export class OutboxRepository implements IOutboxRepository {
     return this.repository.save(entity);
   }
 
-  async findByStatus(status: OutboxStatus): Promise<OutboxEntity[]> {
+  async findByStatus(
+    status: OutboxStatus,
+    options: {
+      order?: Record<string, 'ASC' | 'DESC'>;
+      take?: number;
+    } = {},
+  ): Promise<OutboxEntity[]> {
+    const { order = { createdAt: 'ASC' }, take = 100 } = options;
     return this.repository.find({
       where: { status },
-      order: { createdAt: 'ASC' },
-      take: 100,
+      order: order,
+      take,
     });
   }
 

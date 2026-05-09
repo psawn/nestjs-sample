@@ -1,19 +1,22 @@
 import { Controller } from '@nestjs/common';
-import { MessagePattern, Payload } from '@nestjs/microservices';
-import { CreateUserDto } from './dto/create-user.dto';
+import { EventPattern, MessagePattern, Payload } from '@nestjs/microservices';
 import { UserService } from './user.service';
 import { UserProfile } from './entities/user-profile.entity';
+import { UserEventType } from '../common/constants/events';
+import type { UserCreateEvent } from '../common/events';
 
 @Controller()
 export class UserController {
   constructor(private readonly userService: UserService) {}
 
-  @MessagePattern('user.create')
-  async createUser(@Payload() dto: CreateUserDto): Promise<UserProfile> {
-    return this.userService.createUser(dto);
+  @EventPattern(UserEventType.Create)
+  async handleUserCreatedEvent(
+    @Payload() event: UserCreateEvent,
+  ): Promise<void> {
+    await this.userService.handleUserCreatedEvent(event);
   }
 
-  @MessagePattern('user.findById')
+  @MessagePattern(UserEventType.FindById)
   async getUser(
     @Payload() payload: { userId: string },
   ): Promise<UserProfile | null> {

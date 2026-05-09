@@ -8,7 +8,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { v7 as uuidv7 } from 'uuid';
 import { LoginDto, RegisterDto } from './dto';
-import { UserCreatedEvent, UserEventType } from '../common/events';
+import { UserCreateEvent, UserEventType } from '../common/events';
 import {
   OUTBOX_REPOSITORY,
   AUTH_CREDENTIAL_REPOSITORY,
@@ -47,9 +47,9 @@ export class AuthService {
     await this.authCredentialRepository.save(credential);
 
     const eventId = uuidv7();
-    const event: UserCreatedEvent = {
+    const event: UserCreateEvent = {
       eventId,
-      eventType: UserEventType.Created,
+      eventType: UserEventType.Create,
       aggregateId: userId,
       timestamp: new Date(),
       payload: {

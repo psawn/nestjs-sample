@@ -1,27 +1,42 @@
-import { Inject, Injectable } from '@nestjs/common';
-import { ClientProxy } from '@nestjs/microservices';
+import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
+import { ClientKafka } from '@nestjs/microservices';
 import { firstValueFrom, timeout } from 'rxjs';
 import { LoginDto, RegisterDto } from '../auth/dto';
-import { CreateUserDto } from '../user/dto/create-user.dto';
 import { UserProfile } from '../user/entities/user-profile.entity';
 import {
   AUTH_SERVICE_CLIENT,
   USER_SERVICE_CLIENT,
 } from '../common/constants/di-tokens';
+import { AuthEventType, UserEventType } from '../common/events';
 
 @Injectable()
-export class GatewayService {
+export class GatewayService implements OnModuleInit {
   constructor(
     @Inject(AUTH_SERVICE_CLIENT)
-    private readonly authClient: ClientProxy,
+    private readonly authClient: ClientKafka,
     @Inject(USER_SERVICE_CLIENT)
-    private readonly userClient: ClientProxy,
+    private readonly userClient: ClientKafka,
   ) {}
+
+  async onModuleInit() {
+    const authPatterns = [AuthEventType.Register, AuthEventType.Login];
+    const userPatterns = [UserEventType.FindById];
+
+    authPatterns.forEach((pattern) => {
+      this.authClient.subscribeToResponseOf(pattern);
+    });
+
+    userPatterns.forEach((pattern) => {
+      this.userClient.subscribeToResponseOf(pattern);
+    });
+
+    await Promise.all([this.authClient.connect(), this.userClient.connect()]);
+  }
 
   async register(dto: RegisterDto): Promise<unknown> {
     return firstValueFrom(
       this.authClient
-        .send<unknown, RegisterDto>('auth.register', dto)
+        .send<unknown, RegisterDto>(AuthEventType.Register, dto)
         .pipe(timeout(5000)),
     );
   }
@@ -29,15 +44,7 @@ export class GatewayService {
   async login(dto: LoginDto): Promise<unknown> {
     return firstValueFrom(
       this.authClient
-        .send<unknown, LoginDto>('auth.login', dto)
-        .pipe(timeout(5000)),
-    );
-  }
-
-  async createUser(dto: CreateUserDto): Promise<UserProfile> {
-    return firstValueFrom(
-      this.userClient
-        .send<UserProfile, CreateUserDto>('user.create', dto)
+        .send<unknown, LoginDto>(AuthEventType.Login, dto)
         .pipe(timeout(5000)),
     );
   }
@@ -45,7 +52,7 @@ export class GatewayService {
   async getUser(userId: string): Promise<UserProfile | null> {
     return firstValueFrom(
       this.userClient
-        .send<UserProfile | null, { userId: string }>('user.findById', {
+        .send<UserProfile | null, { userId: string }>(UserEventType.FindById, {
           userId,
         })
         .pipe(timeout(5000)),

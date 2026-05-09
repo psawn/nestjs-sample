@@ -1,12 +1,13 @@
 ---
-name: "NestJS Microservice-Ready Guidelines (Event-Driven Auth)"
-description: "Guidelines for modular monolith evolving to microservices using Kafka, PostgreSQL, and decoupled data ownership with Repository Pattern."
+name: 'NestJS Microservice-Ready Guidelines (Event-Driven Auth)'
+description: 'Guidelines for modular monolith evolving to microservices using Kafka, PostgreSQL, and decoupled data ownership with Repository Pattern.'
 applyTo: '**'
 ---
 
 # 1. ARCHITECTURE & DESIGN
 
 ## Pattern & Structure
+
 - **Model**: Modular Monolith (Microservice-ready).
 - **Bounded Contexts**:
   - `Auth`: Security credentials only.
@@ -14,19 +15,22 @@ applyTo: '**'
   - `Search`
 
 ## Service Responsibilities
-| Service | Owns | Interface |
-|---------|------|-----------|
-| Auth | `email`, `password_hash` | `IAuthCredentialRepository` |
-| User | `full_name`, `avatar_url`, `email` | `IUserProfileRepository` |
+
+| Service | Owns                               | Interface                   |
+| ------- | ---------------------------------- | --------------------------- |
+| Auth    | `email`, `password_hash`           | `IAuthCredentialRepository` |
+| User    | `full_name`, `avatar_url`, `email` | `IUserProfileRepository`    |
 
 ## Database Design
 
 ### Storage: PostgreSQL
+
 - **Isolation**: Each module = separate database/schema.
 - **Integrity**: STRICTLY NO cross-module SQL joins or FK relationships.
 - **IDs**: Use **UUID v7** for all entities and event IDs (for sortability).
 
 ### Naming Convention
+
 - **Tables & Columns**: Must use **snake_case** (e.g., `user_id`, `created_at`).
 - **Code Property**: Must use **camelCase** (e.g., `userId`, `createdAt`).
 - **Mapping**: Always use the `@Column({ name: 'snake_case_name' })` decorator in Entity files.
@@ -36,6 +40,7 @@ applyTo: '**'
 # 2. DATA & REPOSITORY PATTERN
 
 ## Requirements (Mandatory)
+
 - NO direct TypeORM `Repository<T>` injection in Services.
 - Define **Domain Repository Interface** per module.
 - Bind implementations using **DI Tokens** (Symbols or strings, e.g., `AUTH_REPO_TOKEN`).
@@ -46,9 +51,11 @@ applyTo: '**'
 # 3. COMMUNICATION
 
 ## Synchronous (Internal)
+
 - Use Interface-based DI for inter-module calls.
 
 ## Asynchronous (Event-Driven)
+
 - **Transport**: Kafka.
 - **Flow**:
   1. `AuthService` creates account → saves via `IAuthCredentialRepository`.
@@ -61,6 +68,7 @@ applyTo: '**'
 # 4. API GATEWAY
 
 ## Responsibilities
+
 - All external HTTP requests MUST go through the API Gateway.
 - API Gateway handles:
   - Request entry point
@@ -70,6 +78,7 @@ applyTo: '**'
   - Routing to internal services
 
 ## Communication
+
 - Gateway communicates with internal services using NestJS Microservice Transport (ClientProxy)
 - Gateway MUST NOT access databases directly
 - Gateway MUST NOT contain business logic
@@ -77,13 +86,13 @@ applyTo: '**'
 
 ## Route Rules
 
-| Route Type | Authentication |
-|------------|----------------|
-| `/auth/*` | Public (use `@Public()` decorator) |
+| Route Type | Authentication                                |
+| ---------- | --------------------------------------------- |
+| `/auth/*`  | Public (use `@Public()` decorator)            |
 | `/users/*` | JWT Required (use `@UseGuards(JwtAuthGuard)`) |
 
-
 ## Timeout & Resilience
+
 - Recommended timeout: 5000ms
 - Gateway SHOULD handle:
   - TimeoutException
@@ -95,9 +104,11 @@ applyTo: '**'
 ## JWT Implementation (MANDATORY)
 
 ### DO NOT USE @nestjs/passport
+
 All authentication MUST be implemented manually without `@nestjs/passport`.
 
 ### Required Components
+
 1. **`@Public()` decorator** (`src/common/guards/public.decorator.ts`):
    - Use `SetMetadata(IS_PUBLIC_KEY, true)` to mark routes as public
    - JwtAuthGuard MUST check this metadata and skip authentication when present
@@ -119,6 +130,7 @@ All authentication MUST be implemented manually without `@nestjs/passport`.
    - Payload MUST contain: `sub` (user_id), `email`
 
 ### JWT Payload Structure
+
 ```json
 {
   "sub": "uuid-v7-user-id",
@@ -129,11 +141,13 @@ All authentication MUST be implemented manually without `@nestjs/passport`.
 ```
 
 ### Password Security
+
 - Passwords MUST be hashed using **bcrypt**
 - Salt rounds: **10-12**
 - Plain text passwords MUST NEVER be stored or logged
 
 ### Route Protection Pattern
+
 ```ts
 // Public route - no auth required
 @Public()
@@ -147,15 +161,18 @@ async getUser(@Param('id') id: string) { ... }
 ```
 
 ### Gateway Authentication
+
 - Gateway MUST validate JWT via `JwtAuthGuard` BEFORE forwarding protected requests
 - Internal services SHOULD trust validated gateway requests (gateway sets `request.user`)
 
 ## Public Routes
+
 - Public endpoints MUST use a custom `@Public()` decorator
 - `JwtAuthGuard` MUST skip authentication for routes marked with `@Public()`
 - Do NOT use any other mechanism (e.g., `Reflector`) to mark public routes
 
 ## Role-Based Access Control (if implemented)
+
 - Use `@Roles('admin')` decorator with `RolesGuard`
 - `RolesGuard` must check `user.roles` from validated JWT payload
 
@@ -164,6 +181,7 @@ async getUser(@Param('id') id: string) { ... }
 # 6. RELIABILITY
 
 ## IDEMPOTENCY
+
 - Consumers MUST be idempotent.
 - MUST check existing records before insert/update.
 - SHOULD use unique constraints (e.g., `aggregate_id`) or upsert.
@@ -171,10 +189,12 @@ async getUser(@Param('id') id: string) { ... }
 ## OUTBOX PATTERN
 
 ### Requirements
+
 - All events MUST be published using the Outbox Pattern.
 - Services MUST NOT emit events directly to Kafka after database operations.
 
 ### Prohibited Anti-Pattern
+
 ```ts
 // ❌ FORBIDDEN
 await repository.save(...)
@@ -182,26 +202,27 @@ await kafkaService.emit(...)  // Direct Kafka emit not allowed
 ```
 
 ### Outbox Table Schema
-| Field | Type | Notes |
-|-------|------|-------|
-| `id` | UUID v7 | Primary key |
-| `event_type` | String | Index |
-| `aggregate_id` | UUID v7 | Index |
-| `payload` | JSONB | |
-| `status` | ENUM | Index (PENDING, PROCESSED, FAILED) |
-| `retry_count` | Integer | Default: 0 |
-| `created_at` | Timestamp | Index |
-| `processed_at`| Timestamp| Nullable |
-| `error_message`| Text | Nullable |
 
+| Field           | Type      | Notes                              |
+| --------------- | --------- | ---------------------------------- |
+| `id`            | UUID v7   | Primary key                        |
+| `event_type`    | String    | Index                              |
+| `aggregate_id`  | UUID v7   | Index                              |
+| `payload`       | JSONB     |                                    |
+| `status`        | ENUM      | Index (PENDING, PROCESSED, FAILED) |
+| `retry_count`   | Integer   | Default: 0                         |
+| `created_at`    | Timestamp | Index                              |
+| `processed_at`  | Timestamp | Nullable                           |
+| `error_message` | Text      | Nullable                           |
 
 ### Publisher Implementation
+
 - **Batch processing**:
   1. Fetch PENDING in chunks (LIMIT 100)
   2. For each event:
-      - Publish to Kafka
-      - If success: Mark as PROCESSED
-      - If failure: Increment retry_count, mark as FAILED if max retries reached
+     - Publish to Kafka
+     - If success: Mark as PROCESSED
+     - If failure: Increment retry_count, mark as FAILED if max retries reached
   3. Repeat until no PENDING events remain
 - **Concurrency**: Use `p-limit` with `Promise.all` for controlled parallelism
 - **Retry**: Increment `retry_count`; mark FAILED after max attempts
@@ -215,6 +236,7 @@ await kafkaService.emit(...)  // Direct Kafka emit not allowed
 # 7. CODE QUALITY
 
 ## Standards
+
 - **Type Safety**: NO `any` types
 - **Validation**: Strict DTO validation via `class-validator`
 - **Logic Placement**: Business logic in Services; Controllers thin
@@ -225,31 +247,12 @@ await kafkaService.emit(...)  // Direct Kafka emit not allowed
 # 8. INFRASTRUCTURE & SETUP
 
 ## DI & Modules
+
 - Shared services (Kafka, PostgreSQL, Outbox) in `src/infrastructure`
 - Inject via DI Tokens, NOT direct type references
 
 ## Environment
+
 - Provide `.env.example` at project root
 - Define all required variables for local development and deployment
 - **NEVER commit real secrets**
-
-### Required Environment Variables
-```
-# Application
-PORT=3000
-
-# PostgreSQL
-POSTGRES_HOST=localhost
-POSTGRES_PORT=5432
-POSTGRES_USER=postgres
-POSTGRES_PASSWORD=postgres
-POSTGRES_DB=auth_db
-
-# JWT (required - no defaults)
-JWT_ACCESS_SECRET=<your-secret-at-least-32-chars>
-JWT_ACCESS_EXPIRES=1h
-
-# Kafka
-KAFKA_BROKER=localhost:9092
-KAFKA_CLIENT_ID=nestjs-sample-kafka-client
-```

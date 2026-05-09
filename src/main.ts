@@ -12,10 +12,23 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
   app.connectMicroservice({
-    transport: Transport.TCP,
+    transport: Transport.KAFKA,
     options: {
-      host: '127.0.0.1',
-      port: configService.get<number>('MICROSERVICE_PORT') ?? 4000,
+      client: {
+        brokers: (
+          configService.get<string>('KAFKA_BROKERS') ?? 'localhost:9092'
+        ).split(','),
+        retry: {
+          initialRetryTime: 300,
+          retries: 10,
+        },
+      },
+      consumer: {
+        groupId:
+          configService.get<string>('KAFKA_CONSUMER_GROUP') ??
+          'user-profile-consumer',
+        allowAutoTopicCreation: true,
+      },
     },
   });
 

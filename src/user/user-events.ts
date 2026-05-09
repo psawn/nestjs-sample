@@ -1,4 +1,4 @@
-export interface UserCreatedEvent {
+export interface UserCreateEvent {
   eventId: string;
   eventType: string;
   aggregateId: string;

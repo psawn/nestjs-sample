@@ -2,12 +2,12 @@ import { Column, Entity, PrimaryColumn } from 'typeorm';
 
 @Entity('auth_credentials')
 export class AuthCredential {
-  @PrimaryColumn({ type: 'uuid' })
+  @PrimaryColumn({ type: 'uuid', name: 'user_id' })
   userId!: string;
 
-  @Column({ unique: true })
+  @Column({ unique: true, name: 'email' })
   email!: string;
 
-  @Column()
+  @Column({ name: 'password_hash' })
   passwordHash!: string;
 }
