@@ -21,7 +21,7 @@ export class OutboxPublisherService {
 
   @Interval(5000)
   async publishPendingEvents(): Promise<void> {
-    this.logger.debug('Checking for pending outbox events');
+    this.logger.log('Checking for pending outbox events');
     const limit = pLimit(this.CONCURRENCY_LIMIT);
 
     try {
@@ -40,7 +40,7 @@ export class OutboxPublisherService {
         const tasks = pendingEvents.map((event) =>
           limit(async () => {
             try {
-              this.logger.debug(
+              this.logger.log(
                 `Publishing event: ${event.eventType} (ID: ${event.id})`,
               );
 

@@ -11,16 +11,20 @@ async function bootstrap() {
   app.setGlobalPrefix('api');
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
 
+  // Kafka for Asynchronous Communication
   app.connectMicroservice({
     transport: Transport.KAFKA,
     options: {
       client: {
+        clientId: 'nestjs-consumer-server',
         brokers: (
           configService.get<string>('KAFKA_BROKERS') ?? 'localhost:9092'
         ).split(','),
         retry: {
-          initialRetryTime: 300,
-          retries: 10,
+          initialRetryTime: 1000,
+          retries: 15,
+          maxRetryTime: 30000,
+          factor: 2,
         },
       },
       consumer: {
@@ -29,6 +33,27 @@ async function bootstrap() {
           'user-profile-consumer',
         allowAutoTopicCreation: true,
       },
+      subscribe: {
+        fromBeginning: true,
+      },
+    },
+  });
+
+  // TCP for Synchronous Communication (Auth Service)
+  app.connectMicroservice({
+    transport: Transport.TCP,
+    options: {
+      host: '0.0.0.0',
+      port: configService.get<number>('AUTH_SERVICE_PORT') ?? 4001,
+    },
+  });
+
+  // TCP for Synchronous Communication (User Service)
+  app.connectMicroservice({
+    transport: Transport.TCP,
+    options: {
+      host: '0.0.0.0',
+      port: configService.get<number>('USER_SERVICE_PORT') ?? 4002,
     },
   });
 

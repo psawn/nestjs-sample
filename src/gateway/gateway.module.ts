@@ -17,22 +17,10 @@ import { AuthModule } from '../auth/auth.module';
         name: AUTH_SERVICE_CLIENT,
         inject: [ConfigService],
         useFactory: (configService: ConfigService) => ({
-          transport: Transport.KAFKA,
+          transport: Transport.TCP,
           options: {
-            client: {
-              brokers: (
-                configService.get<string>('KAFKA_BROKERS') ?? 'localhost:9092'
-              ).split(','),
-              clientId: 'auth-gateway-client',
-              retry: {
-                initialRetryTime: 300,
-                retries: 10,
-              },
-            },
-            consumer: {
-              groupId: 'auth-gateway-consumer',
-              allowAutoTopicCreation: true,
-            },
+            host: configService.get<string>('AUTH_SERVICE_HOST') ?? 'localhost',
+            port: configService.get<number>('AUTH_SERVICE_PORT') ?? 4001,
           },
         }),
       },
@@ -40,22 +28,10 @@ import { AuthModule } from '../auth/auth.module';
         name: USER_SERVICE_CLIENT,
         inject: [ConfigService],
         useFactory: (configService: ConfigService) => ({
-          transport: Transport.KAFKA,
+          transport: Transport.TCP,
           options: {
-            client: {
-              brokers: (
-                configService.get<string>('KAFKA_BROKERS') ?? 'localhost:9092'
-              ).split(','),
-              clientId: 'user-gateway-client',
-              retry: {
-                initialRetryTime: 300,
-                retries: 10,
-              },
-            },
-            consumer: {
-              groupId: 'user-gateway-consumer',
-              allowAutoTopicCreation: true,
-            },
+            host: configService.get<string>('USER_SERVICE_HOST') ?? 'localhost',
+            port: configService.get<number>('USER_SERVICE_PORT') ?? 4002,
           },
         }),
       },

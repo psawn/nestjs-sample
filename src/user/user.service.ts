@@ -1,6 +1,10 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
+import { ClientProxy } from '@nestjs/microservices';
 import { UserCreateEvent } from '../common/events';
-import { USER_PROFILE_REPOSITORY } from '../common/constants/di-tokens';
+import {
+  USER_PROFILE_REPOSITORY,
+  AUTH_SERVICE_CLIENT,
+} from '../common/constants/di-tokens';
 import type { IUserProfileRepository } from './interfaces/user-profile-repository.interface';
 import { UserProfile } from './entities/user-profile.entity';
 
@@ -11,7 +15,9 @@ export class UserService {
   constructor(
     @Inject(USER_PROFILE_REPOSITORY)
     private readonly userProfileRepository: IUserProfileRepository,
-  ) { }
+    @Inject(AUTH_SERVICE_CLIENT)
+    private readonly authClient: ClientProxy,
+  ) {}
 
   async getUser(userId: string): Promise<UserProfile | null> {
     return this.userProfileRepository.findOneBy({ userId });

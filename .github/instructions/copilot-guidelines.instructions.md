@@ -12,7 +12,7 @@ applyTo: '**'
 - **Bounded Contexts**:
   - `Auth`: Security credentials only.
   - `User`: Personal profiles & metadata.
-  - `Search`
+  - `Search`: Search functionality.
 
 ## Service Responsibilities
 
@@ -37,9 +37,9 @@ applyTo: '**'
 
 ---
 
-# 2. DATA & REPOSITORY PATTERN
+# 2. DESIGN PATTERNS
 
-## Requirements (Mandatory)
+## Repository Pattern (MANDATORY)
 
 - NO direct TypeORM `Repository<T>` injection in Services.
 - Define **Domain Repository Interface** per module.
@@ -50,18 +50,69 @@ applyTo: '**'
 
 # 3. COMMUNICATION
 
-## Synchronous (Internal)
+## Synchronous (Internal RPC)
 
-- Use Interface-based DI for inter-module calls.
+### Transport
+
+- Internal synchronous communication between services MUST use NestJS TCP Transport.
+- Services communicate via `ClientProxy.send()` and `@MessagePattern()`.
+
+### TCP Ports
+
+| Service     | TCP Port |
+| ----------- | -------- |
+| API Gateway | 4000     |
+| Auth        | 4001     |
+| User        | 4002     |
+| Search      | 4003     |
+
+### Rules
+
+- TCP ports MUST be configurable via environment variables.
+- Direct database access across services is STRICTLY FORBIDDEN.
+- Synchronous communication SHOULD only be used when an immediate response is required, such as:
+  - Request/response workflows
+  - Internal queries
+  - Validation checks
+  - RPC-style operations
+- Circular service dependencies SHOULD be minimized.
+- Event-driven communication SHOULD be preferred for asynchronous workflows.
+
+---
 
 ## Asynchronous (Event-Driven)
 
-- **Transport**: Kafka.
-- **Flow**:
-  1. `AuthService` creates account → saves via `IAuthCredentialRepository`.
-  2. `AuthService` publishes `UserCreated` event via Outbox (Required: `user_id`, `email`; Optional: profile metadata).
-  3. `UserService` consumes event → saves via `IUserProfileRepository`.
-- **Event Contracts**: Centralized in `src/common/constants/events.ts` using enums.
+### Transport
+
+- Kafka MUST be used for asynchronous communication and domain events.
+- Services communicate via `ClientProxy.emit()` and `@EventPattern()`.
+
+### Rules
+
+- Services MUST NOT emit Kafka events directly after database writes.
+- All Kafka events MUST be published through the Outbox Pattern.
+- Kafka SHOULD be used for:
+  - Domain events
+  - Notifications
+  - Event propagation
+  - Eventually consistent workflows
+  - Background processing
+
+### Flow
+
+1. `AuthService` creates account → saves via `IAuthCredentialRepository`
+2. `AuthService` writes `UserCreated` event to Outbox table
+3. Outbox Publisher publishes event to Kafka
+4. `UserService` consumes event → saves via `IUserProfileRepository`
+
+### Event Contracts
+
+- Event contracts MUST be centralized in:
+  - `src/common/constants/events.ts`
+- Use enums/constants for:
+  - Topic names
+  - Event types
+  - Message patterns
 
 ---
 

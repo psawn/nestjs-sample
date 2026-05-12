@@ -1,5 +1,5 @@
-import { Inject, Injectable, OnModuleInit } from '@nestjs/common';
-import { ClientKafka } from '@nestjs/microservices';
+import { Inject, Injectable } from '@nestjs/common';
+import { ClientProxy } from '@nestjs/microservices';
 import { firstValueFrom, timeout } from 'rxjs';
 import { LoginDto, RegisterDto } from '../auth/dto';
 import { UserProfile } from '../user/entities/user-profile.entity';
@@ -10,28 +10,13 @@ import {
 import { AuthEventType, UserEventType } from '../common/events';
 
 @Injectable()
-export class GatewayService implements OnModuleInit {
+export class GatewayService {
   constructor(
     @Inject(AUTH_SERVICE_CLIENT)
-    private readonly authClient: ClientKafka,
+    private readonly authClient: ClientProxy,
     @Inject(USER_SERVICE_CLIENT)
-    private readonly userClient: ClientKafka,
+    private readonly userClient: ClientProxy,
   ) {}
-
-  async onModuleInit() {
-    const authPatterns = [AuthEventType.Register, AuthEventType.Login];
-    const userPatterns = [UserEventType.FindById];
-
-    authPatterns.forEach((pattern) => {
-      this.authClient.subscribeToResponseOf(pattern);
-    });
-
-    userPatterns.forEach((pattern) => {
-      this.userClient.subscribeToResponseOf(pattern);
-    });
-
-    await Promise.all([this.authClient.connect(), this.userClient.connect()]);
-  }
 
   async register(dto: RegisterDto): Promise<unknown> {
     return firstValueFrom(

@@ -21,8 +21,10 @@ import { ConfigService } from '@nestjs/config';
                 configService.get<string>('KAFKA_CLIENT_ID') ??
                 'nestjs-sample-kafka-client',
               retry: {
-                initialRetryTime: 300,
-                retries: 10,
+                initialRetryTime: 1000,
+                retries: 15,
+                maxRetryTime: 30000,
+                factor: 2,
               },
             },
             producer: {

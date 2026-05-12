@@ -1,11 +1,15 @@
 import { Module } from '@nestjs/common';
 import { JwtModule } from '@nestjs/jwt';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ClientsModule, Transport } from '@nestjs/microservices';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { AuthCredential } from './entities/auth-credential.entity';
 import { OutboxModule } from '../infrastructure/outbox/outbox.module';
-import { AUTH_CREDENTIAL_REPOSITORY } from '../common/constants/di-tokens';
+import {
+  AUTH_CREDENTIAL_REPOSITORY,
+  USER_SERVICE_CLIENT,
+} from '../common/constants/di-tokens';
 import { AuthCredentialRepository } from './repositories/auth-credential.repository';
 import { ConfigService } from '@nestjs/config';
 import { StringValue } from 'ms';
@@ -24,6 +28,19 @@ import { StringValue } from 'ms';
     }),
     OutboxModule,
     TypeOrmModule.forFeature([AuthCredential]),
+    ClientsModule.registerAsync([
+      {
+        name: USER_SERVICE_CLIENT,
+        inject: [ConfigService],
+        useFactory: (configService: ConfigService) => ({
+          transport: Transport.TCP,
+          options: {
+            host: configService.get<string>('USER_SERVICE_HOST') ?? 'localhost',
+            port: configService.get<number>('USER_SERVICE_PORT') ?? 4002,
+          },
+        }),
+      },
+    ]),
   ],
   controllers: [AuthController],
   providers: [

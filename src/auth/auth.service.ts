@@ -5,6 +5,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { ClientProxy } from '@nestjs/microservices';
 import * as bcrypt from 'bcrypt';
 import { v7 as uuidv7 } from 'uuid';
 import { LoginDto, RegisterDto } from './dto';
@@ -12,9 +13,12 @@ import { UserCreateEvent, UserEventType } from '../common/events';
 import {
   OUTBOX_REPOSITORY,
   AUTH_CREDENTIAL_REPOSITORY,
+  USER_SERVICE_CLIENT,
 } from '../common/constants/di-tokens';
 import type { IOutboxRepository } from '../infrastructure/outbox/interfaces/outbox-repository.interface';
 import type { IAuthCredentialRepository } from './interfaces/auth-credential-repository.interface';
+
+import { firstValueFrom } from 'rxjs';
 
 @Injectable()
 export class AuthService {
@@ -24,6 +28,8 @@ export class AuthService {
     private readonly outboxRepository: IOutboxRepository,
     @Inject(AUTH_CREDENTIAL_REPOSITORY)
     private readonly authCredentialRepository: IAuthCredentialRepository,
+    @Inject(USER_SERVICE_CLIENT)
+    private readonly userClient: ClientProxy,
   ) {}
 
   async register(dto: RegisterDto) {
@@ -87,6 +93,15 @@ export class AuthService {
     if (!passwordMatch) {
       throw new UnauthorizedException('Invalid credentials');
     }
+
+    const response = await firstValueFrom(
+      this.userClient.send<{ response: string }, { message: string }>(
+        'hello_user',
+        { message: 'hello from auth-service' },
+      ),
+    );
+
+    console.log(response);
 
     const payload = { sub: credential.userId, email: credential.email };
     return {

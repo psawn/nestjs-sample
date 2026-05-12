@@ -22,4 +22,10 @@ export class UserController {
   ): Promise<UserProfile | null> {
     return this.userService.getUser(payload.userId);
   }
+
+  @MessagePattern('hello_user')
+  helloUser(@Payload() data: { message: string }) {
+    console.log('Received from auth:', data.message);
+    return { response: 'hello from user-service' };
+  }
 }
